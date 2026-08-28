@@ -1,0 +1,58 @@
+name: Build Projectile Lab for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build JAR
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force build/classes | Out-Null
+          javac -d build/classes src/ProjectileLab.java
+          @"
+          Manifest-Version: 1.0
+          Main-Class: ProjectileLab
+          "@ | Set-Content -Path build/manifest.txt -NoNewline
+          jar cfm build/ProjectileLab.jar build/manifest.txt -C build/classes .
+
+      - name: Package Windows EXE
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          jpackage `
+            --type exe `
+            --name "ProjectileLab" `
+            --app-version "1.0.0" `
+            --input build `
+            --main-jar ProjectileLab.jar `
+            --main-class ProjectileLab `
+            --dest dist `
+            --win-shortcut `
+            --win-menu `
+            --win-menu-group "Projectile Lab" `
+            --vendor "Projectile Lab" `
+            --description "Projectile motion learning app for secondary-school students"
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectileLab-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
