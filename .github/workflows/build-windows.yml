@@ -22,21 +22,24 @@ jobs:
       - name: Build JAR
         shell: pwsh
         run: |
-          Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
           New-Item -ItemType Directory -Force build/classes | Out-Null
-          javac -d build/classes src/ProjectileLab.java
-          @"
+          javac -encoding UTF-8 -d build/classes src/ProjectileLab.java
+          @'
           Manifest-Version: 1.0
           Main-Class: ProjectileLab
-          "@ | Set-Content -Path build/manifest.txt -NoNewline
+          '@ | Set-Content -Path build/manifest.txt -Encoding ascii
           jar cfm build/ProjectileLab.jar build/manifest.txt -C build/classes .
+          java -version
+          jar tf build/ProjectileLab.jar | Select-Object -First 20
 
-      - name: Package Windows EXE
+      - name: Create Windows application image
         shell: pwsh
         run: |
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
           New-Item -ItemType Directory -Force dist | Out-Null
           jpackage `
-            --type exe `
+            --type app-image `
             --name "ProjectileLab" `
             --app-version "1.0.0" `
             --input build `
@@ -47,12 +50,54 @@ jobs:
             --win-menu `
             --win-menu-group "Projectile Lab" `
             --vendor "Projectile Lab" `
-            --description "Projectile motion learning app for secondary-school students"
+            --description "Projectile motion learning app for secondary-school students" `
+            --java-options "-Dfile.encoding=UTF-8"
+
+      - name: Smoke test application launcher
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "dist/ProjectileLab/ProjectileLab.exe"
+          Write-Host "Testing: $exe"
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) {
+            Write-Error "ProjectileLab exited immediately with code $($p.ExitCode)."
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Application launcher stayed running for 6 seconds."
+
+      - name: Create Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force installer | Out-Null
+          jpackage `
+            --type exe `
+            --name "ProjectileLab" `
+            --app-version "1.0.0" `
+            --input build `
+            --main-jar ProjectileLab.jar `
+            --main-class ProjectileLab `
+            --dest installer `
+            --win-shortcut `
+            --win-menu `
+            --win-menu-group "Projectile Lab" `
+            --vendor "Projectile Lab" `
+            --description "Projectile motion learning app for secondary-school students" `
+            --java-options "-Dfile.encoding=UTF-8"
+
+      - name: Upload portable Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectileLab-Windows-Portable
+          path: dist/ProjectileLab/**
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: ProjectileLab-Windows-Installer
-          path: dist/*.exe
+          path: installer/*.exe
           if-no-files-found: error
           retention-days: 30
